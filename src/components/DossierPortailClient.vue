@@ -100,14 +100,14 @@
         <p class="text-sm text-gray-600">Voici tous les documents liés à ce dossier. Le rapport principal est indiqué comme <span class="font-medium">document principal</span>.</p>
         
         <div class="grid md:grid-cols-2 gap-4">
-          <DocCard v-for="(doc, idx) in pdfDocs" :key="doc.id" :doc="doc" :is-main="idx === 0" @preview="handlePreview" @sign="showSignModal = true" />
+          <DocCard v-for="(doc, idx) in pdfDocs" :key="doc.id" :doc="doc" :is-main="idx === 0" @preview="handlePreview" @sign="showSignModal = true" @download="handleDownload" />
         </div>
 
         <div v-if="otherDocs.length > 0" class="space-y-3">
           <div class="border-t pt-4">
             <h3 class="text-sm font-medium mb-3">Autres fichiers</h3>
             <div class="grid md:grid-cols-2 gap-4">
-              <DocCard v-for="doc in otherDocs" :key="doc.id" :doc="doc" @preview="handlePreview" @sign="showSignModal = true" />
+              <DocCard v-for="doc in otherDocs" :key="doc.id" :doc="doc" @preview="handlePreview" @sign="showSignModal = true" @download="handleDownload" />
             </div>
           </div>
         </div>
@@ -124,10 +124,17 @@
     </div>
 
     <!-- Modal Preview -->
-    <PreviewModal v-if="showPreview" :doc="previewDoc" @close="showPreview = false" />
+    <PreviewModal v-if="showPreview" :doc="previewDoc" @close="handlePreviewClose" @download="handleDownload" />
 
     <!-- Modal Signature -->
     <SignModal v-if="showSignModal" @close="showSignModal = false" />
+
+    <!-- Pop-up d'évaluation -->
+    <RatingModal 
+      v-if="showRatingModal" 
+      @close="closeRatingModal" 
+      @submit="handleRatingSubmit" 
+    />
   </div>
 </template>
 
@@ -140,6 +147,7 @@ import RemarquesSection from './dossier/RemarquesSection.vue'
 import ActionsSection from './dossier/ActionsSection.vue'
 import PreviewModal from './dossier/PreviewModal.vue'
 import SignModal from './SignModal.vue'
+import RatingModal from './RatingModal.vue'
 
 const props = defineProps({ dossierId: String })
 defineEmits(['back'])
@@ -152,6 +160,9 @@ const activeTab = ref('documents')
 const showPreview = ref(false)
 const previewDoc = ref(null)
 const showSignModal = ref(false)
+const showRatingModal = ref(false)
+const ratingTimer = ref(null)
+const shouldShowRatingOnClose = ref(false)
 
 const tabs = [
   { id: 'documents', label: 'Documents', icon: FileText },
@@ -173,8 +184,105 @@ const statusClass = (statut) => {
 const formatDate = (iso) => new Date(iso).toLocaleDateString('fr-BE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 const handlePreview = (doc) => {
+  // Ouvrir le preview immédiatement
   previewDoc.value = doc
   showPreview.value = true
+  
+  // Vérifier si c'est le document "État des lieux (PDF)"
+  if (doc.label === 'État des lieux (PDF)') {
+    // Vérifier si l'utilisateur a déjà évalué
+    const hasRated = localStorage.getItem(`rating_submitted_${props.dossierId}`)
+    
+    if (!hasRated) {
+      // Marquer qu'on doit afficher le pop-up à la fermeture
+      shouldShowRatingOnClose.value = true
+      
+      // Démarrer un timer de 45 secondes
+      ratingTimer.value = setTimeout(() => {
+        // Afficher le pop-up après 45 secondes
+        showRatingModal.value = true
+        shouldShowRatingOnClose.value = false // Annuler l'affichage à la fermeture
+      }, 45000) // 45 secondes = 45000 millisecondes
+      
+      console.log('⏱️ Timer de 45s démarré pour le pop-up d\'évaluation')
+    }
+  }
+}
+
+const handlePreviewClose = () => {
+  // Fermer le preview
+  showPreview.value = false
+  
+  // Annuler le timer s'il existe
+  if (ratingTimer.value) {
+    clearTimeout(ratingTimer.value)
+    ratingTimer.value = null
+    console.log('⏱️ Timer annulé')
+  }
+  
+  // Si on doit afficher le pop-up à la fermeture
+  if (shouldShowRatingOnClose.value) {
+    shouldShowRatingOnClose.value = false
+    // Afficher le pop-up immédiatement
+    setTimeout(() => {
+      showRatingModal.value = true
+      console.log('🎯 Pop-up affiché à la fermeture du PDF')
+    }, 300) // Petit délai pour une transition fluide
+  }
+}
+
+const handleDownload = (doc) => {
+  // Déclencher le téléchargement du fichier
+  const link = document.createElement('a')
+  link.href = doc.url
+  link.download = doc.label || 'document.pdf'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  
+  console.log('📥 Téléchargement déclenché:', doc.label)
+  
+  // Vérifier si c'est le document "État des lieux (PDF)"
+  if (doc.label === 'État des lieux (PDF)') {
+    // Vérifier si l'utilisateur a déjà évalué
+    const hasRated = localStorage.getItem(`rating_submitted_${props.dossierId}`)
+    
+    if (!hasRated) {
+      // Afficher le pop-up immédiatement après le téléchargement
+      showRatingModal.value = true
+      console.log('🎯 Pop-up affiché après téléchargement')
+    }
+  }
+}
+
+const closeRatingModal = () => {
+  showRatingModal.value = false
+  // Marquer comme "plus tard" - ne pas redemander dans cette session
+  sessionStorage.setItem(`rating_postponed_${props.dossierId}`, 'true')
+}
+
+const handleRatingSubmit = async (data) => {
+  // Sauvegarder l'évaluation en localStorage (temporaire)
+  // À remplacer par un appel API vers votre BDD
+  localStorage.setItem(`rating_submitted_${props.dossierId}`, 'true')
+  localStorage.setItem(`rating_data_${props.dossierId}`, JSON.stringify({
+    rating: data.rating,
+    feedback: data.feedback,
+    timestamp: new Date().toISOString(),
+    dossierId: props.dossierId
+  }))
+  
+  console.log('Rating soumis:', data)
+  
+  // Fermer le modal et ouvrir le PDF
+  showRatingModal.value = false
+  
+  // Maintenant on peut afficher le document
+  const mainDocument = pdfDocs.value[0]
+  if (mainDocument) {
+    previewDoc.value = mainDocument
+    showPreview.value = true
+  }
 }
 
 onMounted(async () => {

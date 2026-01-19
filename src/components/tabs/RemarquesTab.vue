@@ -1,4 +1,16 @@
 <template>
+
+  <!-- BOUTON DE TEST TEMPORAIRE -->
+<div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center justify-between">
+  <span class="text-xs text-yellow-800">🧪 Mode test - Cliquez pour tester le pop-up</span>
+  <button 
+    @click="showRatingModal = true" 
+    class="bg-yellow-500 text-white px-3 py-1.5 rounded text-xs font-medium hover:bg-yellow-600"
+  >
+    Tester le pop-up
+  </button>
+</div>
+
   <div class="space-y-4">
     <h3 class="text-lg font-semibold">Remarques et commentaires</h3>
 
